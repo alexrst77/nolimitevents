@@ -272,6 +272,63 @@ const GRADS=[
  "linear-gradient(140deg,#284B63,#5A2B57)","linear-gradient(140deg,#6B3FA0,#2C1B47)",
  "linear-gradient(140deg,#8C5A2B,#5A2B57)","linear-gradient(140deg,#2F5D50,#3A2350)"
 ];
+
+/* ---------- PORTRAITS SVG (visuels générés, style bustes art-déco) ---------- */
+const PAIRS=[["#8A3B58","#3A2350"],["#5A2B57","#1E3A5F"],["#7C3A5E","#B06A8F"],["#3E2C63","#8A3B58"],["#284B63","#5A2B57"],["#6B3FA0","#2C1B47"],["#8C5A2B","#5A2B57"],["#2F5D50","#3A2350"]];
+const HAIR={
+ long:{back:"M80 150 C75 85 110 62 150 62 C190 62 225 85 220 150 C228 235 222 285 205 305 L95 305 C78 285 72 235 80 150 Z",
+       front:"M98 152 C98 98 122 84 150 84 C178 84 202 98 202 152 C178 124 122 124 98 152 Z"},
+ bob:{back:"M84 150 C80 88 112 64 150 64 C188 64 220 88 216 150 C221 206 212 234 197 242 L103 242 C88 234 79 206 84 150 Z",
+      front:"M98 152 C98 98 122 84 150 84 C178 84 202 98 202 152 C178 124 122 124 98 152 Z"},
+ bun:{back:"M92 150 C90 94 118 72 150 72 C182 72 210 94 208 150 C210 176 206 190 200 196 L100 196 C94 190 90 176 92 150 Z<circle cx='150' cy='54' r='24'/>",
+      front:"M100 150 C100 100 124 88 150 88 C176 88 200 100 200 150 C178 126 122 126 100 150 Z"},
+ short:{back:"",
+      front:"M96 152 C92 86 118 68 150 68 C182 68 208 86 204 152 C197 114 178 102 150 102 C122 102 103 114 96 152 Z"}
+};
+const GARB="M52 400 C58 302 104 266 150 262 C196 266 242 302 248 400 Z";
+const BEARD="M110 192 C112 240 128 262 150 262 C172 262 188 240 190 192 C178 216 122 216 110 192 Z";
+const PORTRAITS={
+ 1:[{skin:"#E8C39E",hair:"long",hc:"#221B28"}],
+ 2:[{skin:"#C68863",hair:"short",hc:"#2A2530",beard:1},{skin:"#E8C39E",hair:"bob",hc:"#4A2C1A"}],
+ 3:[{skin:"#C68863",hair:"short",hc:"#2A2530"}],
+ 4:[{skin:"#8D5524",hair:"bun",hc:"#1B1620"}],
+ 5:[{skin:"#E8C39E",hair:"short",hc:"#8D8A93",beard:1},{skin:"#F1D3B3",hair:"long",hc:"#C9A26B"}],
+ 6:[{skin:"#F1D3B3",hair:"bob",hc:"#B0713A"}],
+ 7:[{skin:"#8D5524",hair:"short",hc:"#15121A",beard:1}],
+ 8:[{skin:"#C68863",hair:"short",hc:"#4A2C1A"},{skin:"#F1D3B3",hair:"long",hc:"#2A2530"}],
+ 9:[{skin:"#E8C39E",hair:"long",hc:"#4A2C1A"}],
+ 10:[{skin:"#E8C39E",hair:"short",hc:"#8D8A93"}],
+ 11:[{skin:"#C68863",hair:"short",hc:"#C9A26B"},{skin:"#E8C39E",hair:"bun",hc:"#B0713A"}],
+ 12:[{skin:"#F1D3B3",hair:"bob",hc:"#1B1620"}]
+};
+function bustSVG(c,tx,ty,sc){
+ const H=HAIR[c.hair], shape=p=>p?`<path d='${p.split("<")[0]}' fill='${c.hc}'/>`+(p.includes("<")?p.slice(p.indexOf("<")).replace("/>",` fill='${c.hc}'/>`):""):"";
+ return `<g transform='translate(${150-150*sc+tx} ${200-200*sc+ty}) scale(${sc})'>`
+  +shape(H.back)
+  +`<rect x='132' y='198' width='36' height='75' fill='${c.skin}'/>`
+  +`<ellipse cx='150' cy='163' rx='50' ry='60' fill='${c.skin}'/>`
+  +`<path d='${GARB}' fill='#141020' stroke='rgba(233,214,180,0.28)' stroke-width='2'/>`
+  +(c.beard?`<path d='${BEARD}' fill='${c.hc}'/>`:"")
+  +shape(H.front)
+  +`</g>`;
+}
+const _portCache={};
+function portrait(p){
+ if(!PORTRAITS[p.id])return null;
+ if(_portCache[p.id])return _portCache[p.id];
+ const [c1,c2]=PAIRS[p.id%PAIRS.length];
+ const busts=PORTRAITS[p.id].length===2
+   ?bustSVG(PORTRAITS[p.id][0],52,26,.88)+bustSVG(PORTRAITS[p.id][1],-50,14,.94)
+   :bustSVG(PORTRAITS[p.id][0],0,0,1);
+ const svg=`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 400'>`
+  +`<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='${c1}'/><stop offset='1' stop-color='${c2}'/></linearGradient></defs>`
+  +`<rect width='300' height='400' fill='url(#g)'/>`
+  +`<circle cx='150' cy='178' r='108' fill='rgba(255,255,255,0.06)'/>`
+  +`<circle cx='150' cy='178' r='122' fill='none' stroke='rgba(216,185,138,0.3)' stroke-width='1.5'/>`
+  +busts+`</svg>`;
+ return _portCache[p.id]="url(\"data:image/svg+xml,"+encodeURIComponent(svg)+"\")";
+}
+
 const PROFILES=[
  {id:1,pseudo:"Séléné",age:31,type:"solo",g:"F",km:4,ville:"Meaux",online:true,verif:["photo","profil"],bio:"Œnologue le jour, noctambule assumée. Je cherche des rencontres élégantes, sans précipitation. La conversation d'abord, toujours.",tags:["Vin nature","Jazz","Discrétion","Sorties club"],dispo:"Soirées & week-ends",last:"En ligne"},
  {id:2,pseudo:"Marc & Élise",age:38,type:"couple",g:"C",km:9,ville:"Chelles",online:false,verif:["email","photo","profil"],bio:"Couple complice depuis 12 ans, libertins depuis 5. Elle : solaire et curieuse. Lui : posé, observateur. Nous privilégions les rencontres à quatre autour d'un dîner avant tout.",tags:["Dîners","Échangisme soft","Clubs sélects","Complicité"],dispo:"Samedis",last:"Actif il y a 2 h"},
@@ -340,7 +397,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 const P=id=>PROFILES.find(p=>p.id===id);
 const ini=p=>p.type==="couple"?p.pseudo.split("&").map(x=>x.trim()[0]).join("·"):p.pseudo[0];
 const grad=p=>GRADS[p.id%GRADS.length];
-const ava=(p,cls)=>`<div class="ava ${cls}" style="background:${grad(p)}">${ini(p)}${p.online&&S.settings.online?'<span class="st"></span>':''}</div>`;
+const ava=(p,cls)=>{const u=portrait(p);return `<div class="ava ${cls}" style="background:${u?u+" center 12%/cover no-repeat":grad(p)}">${u?"":ini(p)}${p.online&&S.settings.online?'<span class="st"></span>':''}</div>`};
 const typeLabel=p=>p.type==="couple"?"Couple":(p.g==="F"?"Femme":"Homme");
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2200)}
 function sheet(html){$("#sheetBox").innerHTML='<div class="grip"></div>'+html;$("#sheetWrap").classList.add("open")}
@@ -509,7 +566,7 @@ function makeCard(p,top){
   el.style.background=grad(p);
   if(!top)el.style.transform=`scale(${.955}) translateY(-12px)`;
   el.innerHTML=`
-    <div class="sw-visu"><span class="big-ini">${ini(p)}</span></div>
+    <div class="sw-visu" style="background:${portrait(p)||"none"} center 22%/cover no-repeat">${portrait(p)?"":`<span class=\"big-ini\">${ini(p)}</span>`}</div>
     <div class="sw-veil"></div>
     <div class="stamp like">Envie</div><div class="stamp nope">Passer</div>
     <div class="sw-info">
@@ -613,7 +670,7 @@ function openProfile(id){
    <div class="chips-wrap">${p.tags.map(t=>`<span class="chip" style="pointer-events:none">${t}</span>`).join("")}</div>
    <div class="sec-title"><h3>Galerie</h3><span style="font-size:12px;color:var(--dim)">🔒 Album privé</span></div>
    <div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:8px">
-     <div class="photo-slot filled" style="background:${grad(p)};aspect-ratio:1"></div>
+     <div class="photo-slot filled" style="background:${portrait(p)||grad(p)} center 15%/cover no-repeat;aspect-ratio:1"></div>
      ${[1,2].map(()=>`<div class="photo-slot filled" style="aspect-ratio:1;background:var(--velvet-2);backdrop-filter:blur(20px)" onclick="askPrivate(${p.id})"><span style="font-size:20px">🔒</span><span style="font-size:10px">Sur demande</span></div>`).join("")}
    </div>
    <div class="sec-title"><h3>Vérifications</h3></div>
@@ -682,7 +739,7 @@ function proxHTML(){
    <div class="grid2" style="padding-bottom:24px">${near.slice(0,6).map(miniCard).join("")}</div>`;
 }
 function miniCard(p){return `<div class="mini-card" onclick="openProfile(${p.id})" style="background:${grad(p)}">
-   <div class="mv">${ini(p)}</div><div class="mveil"></div>
+   <div class="mv" style="background:${portrait(p)||"none"} center 18%/cover no-repeat">${portrait(p)?"":ini(p)}</div><div class="mveil"></div>
    <div class="mi"><div style="display:flex;align-items:center;gap:6px">${esc(p.pseudo.split("&")[0])}, ${p.age} ${p.online&&S.settings.online?'<span class="dot-online"></span>':""}</div>
    <small>${typeLabel(p)} · ~${p.km} km</small></div></div>`}
 function placeBlips(){
