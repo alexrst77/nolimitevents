@@ -105,6 +105,7 @@ function fbStore() {
     set(c, id, v) { return F.set(c, id, clone(v)); },
     del(c, id) { return F.del(c, id); },
     list(c) { return F.list(c); },
+    get(c, id) { return F.get(c, id); },
     async lock(name) {
       for (let i = 0; i < 6; i++) { if (await F.lock(name)) return true; await new Promise(r => setTimeout(r, 900 + Math.random() * 600)); }
       return false;
@@ -510,7 +511,7 @@ function dRow(d) {
   const c = ckStats(d), n = needStats(d), cf = conflictsFor(d).length;
   const dates = d.event.start ? (d.event.end && d.event.end !== d.event.start ? fdShort(d.event.start) + " → " + fdShort(d.event.end) : fd(d.event.start)) : "Dates à définir";
   return `<div class="drow" data-open="${d.id}">
-    <div class="a"><span class="n">${esc(d.num)}</span><span class="c">${esc(dossierTitle(d))}</span><span class="pill ${ph.c}">${ph.l}</span>${cf ? `<span class="pill p-red">Conflit de dates</span>` : ""}</div>
+    <div class="a"><span class="n">${esc(d.num)}</span><span class="c">${esc(dossierTitle(d))}</span><span class="pill ${ph.c}">${ph.l}</span>${cf ? `<span class="pill p-red">Conflit de dates</span>` : ""}${(d.docs || []).some(x => x.kind === "Devis signé") ? `<span class="pill p-lime">Devis signé</span>` : ""}</div>
     <div class="m"><span>${esc(clientLabel(d))}</span><span>${esc(dates)}</span><span><b>${fmt(t.ttc)}</b> ${t.vatRate ? "TTC" : "net"}</span>${d.status === "Accepté" ? `<span>Payé <b>${fmt(paid)}</b></span>` : ""}</div>
     ${d.status === "Accepté" ? `<div class="prog"><span>Matériel <b>${c.ready}/${c.total}</b></span><span>Équipe <b>${n.asg}/${n.need}</b></span><span>Client <b>${reqStats(d).total - reqStats(d).todo}/${reqStats(d).total}</b></span></div>` : ""}
   </div>`;
@@ -557,11 +558,12 @@ async function newDossier() {
 /* =====================================================================
    VUE : DOSSIER
    ===================================================================== */
-const DTABS = [["devis", "Devis"], ["event", "Événement"], ["mat", "Matériel"], ["team", "Équipe"], ["pay", "Factures & paiements"], ["dep", "Dépenses"], ["notes", "Notes"]];
+const DTABS = [["devis", "Devis"], ["event", "Événement"], ["mat", "Matériel"], ["team", "Équipe"], ["pay", "Factures & paiements"], ["dep", "Dépenses"], ["docs", "Documents"], ["notes", "Notes"]];
 function vDossier() {
   const d = CUR, ph = phase(d), t = computeTotals(d);
   const c = ckStats(d), n = needStats(d), r = reqStats(d), cf = conflictsFor(d);
   const badge = {mat: c.todo, team: n.missing, event: r.todo + cf.length};
+  const docN = (d.docs || []).length;
   const accepted = d.status === "Accepté";
   return `
   <div class="dh">
@@ -573,7 +575,7 @@ function vDossier() {
   ${cf.length ? `<div class="lock" style="background:var(--red-soft);color:var(--red)">Conflit : le toboggan est déjà réservé sur ces dates pour ${cf.map(x => esc(dossierTitle(x))).join(", ")}.</div>` : ""}
   <div class="dtabs" role="tablist">${DTABS.map(([k, l]) => {
     const dis = !accepted && ["mat", "team"].includes(k);
-    return `<button role="tab" data-dtab="${k}" class="${UI.tab === k ? "on" : ""}" ${dis ? 'title="Disponible une fois le devis accepté"' : ""}>${l}${badge[k] && accepted ? `<span class="b">${badge[k]}</span>` : ""}</button>`;
+    return `<button role="tab" data-dtab="${k}" class="${UI.tab === k ? "on" : ""}" ${dis ? 'title="Disponible une fois le devis accepté"' : ""}>${l}${badge[k] && accepted ? `<span class="b">${badge[k]}</span>` : ""}${k === "docs" && docN ? ` <span class="pill p-sky" style="padding:0 7px">${docN}</span>` : ""}</button>`;
   }).join("")}</div>
   <div id="dtab">${dossierTab()}</div>`;
 }
@@ -587,7 +589,7 @@ function statusButtons(d) {
 function dossierTab() {
   const accepted = CUR.status === "Accepté";
   if (!accepted && ["mat", "team"].includes(UI.tab)) return `<div class="card empty"><b>Disponible une fois le devis accepté</b>La liste du matériel et les besoins en personnel sont générés automatiquement à l'acceptation.<div style="margin-top:12px"><button class="btn btn-g" data-st="Accepté">Passer le devis en accepté</button></div></div>`;
-  return ({devis: tDevis, event: tEvent, mat: tMat, team: tTeam, pay: tPay, dep: tDep, notes: tNotes}[UI.tab] || tDevis)();
+  return ({devis: tDevis, event: tEvent, mat: tMat, team: tTeam, pay: tPay, dep: tDep, docs: tDocs, notes: tNotes}[UI.tab] || tDevis)();
 }
 function rerenderTab() { const el = $("#dtab"); if (el) { el.innerHTML = dossierTab(); afterDossierRender(); } }
 function rerenderDossier() { const y = window.scrollY; $("#view").innerHTML = vDossier(); afterDossierRender(); window.scrollTo(0, y); renderNav(); }
@@ -1054,6 +1056,63 @@ function depDialog(x, dossierId) {
 }
 
 /* ---------- Onglet NOTES ---------- */
+/* ---------- Onglet DOCUMENTS (devis signé, photos, bons…) ---------- */
+const DOC_KINDS = ["Devis signé", "Bon de commande", "Facture fournisseur", "Photo état des lieux", "Autorisation / arrêté", "Assurance", "Autre"];
+function tDocs() {
+  const L = (CUR.docs || []).slice().sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+  return `<div class="fs"><h3>Documents du dossier <span class="r">${L.length}</span></h3>
+    ${L.length ? `<div class="tbl-w"><table class="tb"><tr><th>Document</th><th>Type</th><th>Ajouté</th><th></th></tr>
+      ${L.map(d => `<tr class="click" data-viewdoc="${d.id}"><td><b>${esc(d.name)}</b><br><span class="muted" style="font-size:12px">${(d.size / 1024).toFixed(0)} Ko</span></td><td>${esc(d.kind || "")}</td><td style="white-space:nowrap">${d.at ? fd(d.at.slice(0, 10)) : ""}<br><span class="muted" style="font-size:12px">${esc(d.by || "")}</span></td><td class="r"><button class="btn btn-o btn-sm" data-viewdoc="${d.id}">Ouvrir</button></td></tr>`).join("")}</table></div>`
+      : `<p class="hint">Aucun document. Ajoute le devis signé, les photos d'état des lieux, l'arrêté municipal…</p>`}
+    <div class="grid g2" style="margin-top:12px">
+      <select id="docKind" aria-label="Type de document">${DOC_KINDS.map(k => `<option>${k}</option>`).join("")}</select>
+      <label class="btn btn-g" for="docFile" style="cursor:pointer">${IC.plus}Ajouter un PDF ou une photo</label>
+      <input type="file" id="docFile" accept="application/pdf,image/*" hidden>
+    </div>
+    <p class="hint" style="margin-top:6px">PDF jusqu'à 700 Ko. Les photos sont réduites automatiquement.</p></div>`;
+}
+function b64FromBuf(buf) { let s = ""; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode.apply(null, b.subarray(i, i + 32768)); return btoa(s); }
+async function shrinkImage(file) {
+  const img = await createImageBitmap(file); const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+  const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return await new Promise(r => c.toBlob(r, "image/jpeg", 0.8));
+}
+document.addEventListener("change", async e => {
+  if (e.target.id !== "docFile" || !e.target.files[0] || !CUR) return;
+  let f = e.target.files[0], type = f.type || "application/pdf", name = f.name;
+  try {
+    if (type.startsWith("image/")) { f = await shrinkImage(f); type = "image/jpeg"; name = name.replace(/\.[^.]+$/, "") + ".jpg"; }
+    if (f.size > 700 * 1024) { toast("Fichier trop lourd (max 700 Ko). Compresse le PDF puis réessaie."); e.target.value = ""; return; }
+    toast("Envoi du document…");
+    const id = uid("doc"), data = b64FromBuf(await f.arrayBuffer());
+    await STORE.set("fichiers", id, {id, dossierId: CUR.id, name, type, size: f.size, data, by: ME.name, at: new Date().toISOString()});
+    CUR.docs = CUR.docs || []; CUR.docs.push({id, name, type, size: f.size, kind: $("#docKind").value, by: ME.name, at: new Date().toISOString()});
+    logTo(CUR, "Document ajouté : " + name); await saveCur(); rerenderTab(); toast("Document ajouté");
+  } catch (x) { toast("Envoi impossible, réessaie."); }
+  e.target.value = "";
+});
+let DOC_URL = null;
+document.addEventListener("click", async e => {
+  const v = e.target.closest("[data-viewdoc]"); if (!v || !CUR) return;
+  e.stopPropagation();
+  const meta = (CUR.docs || []).find(d => d.id === v.dataset.viewdoc); if (!meta) return;
+  modal(`<div class="mdl-h"><h2>${esc(meta.name)}</h2><button data-close aria-label="Fermer">${IC.x}</button></div><div id="docBody" class="empty"><b>Chargement…</b></div>`, true);
+  try {
+    const f = await STORE.get("fichiers", meta.id); if (!f || !f.data) throw 0;
+    const bin = atob(f.data), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    if (DOC_URL) URL.revokeObjectURL(DOC_URL);
+    DOC_URL = URL.createObjectURL(new Blob([u8], {type: f.type}));
+    const body = $("#docBody"); if (!body) return; body.className = "";
+    body.innerHTML = (f.type.startsWith("image/") ? `<img src="${DOC_URL}" alt="" style="width:100%;border-radius:12px">` : `<iframe src="${DOC_URL}" title="${esc(meta.name)}" style="width:100%;height:70vh;border:0;border-radius:12px;background:#fff"></iframe>`)
+      + `<div class="mdl-f"><a class="btn btn-p" href="${DOC_URL}" target="_blank" rel="noopener">Ouvrir en plein écran</a><a class="btn btn-o" href="${DOC_URL}" download="${esc(meta.name)}">${IC.dl}Télécharger</a>
+         <button class="btn btn-d" id="docDel">Supprimer</button></div>`;
+    $("#docDel").onclick = () => confirmBox("Supprimer " + meta.name + " ?", "Le document sera supprimé pour tout le monde.", "Supprimer", async () => {
+      await remove("fichiers", meta.id); CUR.docs = CUR.docs.filter(d => d.id !== meta.id); logTo(CUR, "Document supprimé : " + meta.name); await saveCur(); rerenderTab();
+    });
+  } catch (x) { const b = $("#docBody"); if (b) b.innerHTML = "<b>Impossible d'ouvrir ce document.</b>"; }
+});
+
 function tNotes() {
   const d = CUR;
   return `<div class="fs"><h3>Notes internes</h3>${F("Visible par Alex et Adeline uniquement", "notes", {area: 1, rows: 8, ph: "Infos client, négociation, souvenirs du montage…"})}</div>

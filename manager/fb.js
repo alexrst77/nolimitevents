@@ -25,6 +25,7 @@ if (!firebaseConfig || !firebaseConfig.apiKey) {
     watch(c, cb, err) { return onSnapshot(collection(db, c), s => cb(wrap(s)), e => { console.error(e); err && err(e); }); },
     set: (c, id, v) => setDoc(doc(db, c, id), v),
     del: (c, id) => deleteDoc(doc(db, c, id)),
+    get: async (c, id) => { const s = await getDoc(doc(db, c, id)); return s.exists() ? s.data() : null; },
     list: async c => (await getDocs(collection(db, c))).docs.map(d => d.data()),
     lock: name => runTransaction(db, async tx => {
       const r = doc(db, "locks", name), s = await tx.get(r), now = Date.now();
