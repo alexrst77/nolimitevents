@@ -137,12 +137,19 @@ function handleWriteError(e) {
    CONNEXION (Firebase Auth)
    ===================================================================== */
 const AUTH_ERR = {"auth/invalid-credential": "Email ou mot de passe incorrect.", "auth/wrong-password": "Email ou mot de passe incorrect.", "auth/user-not-found": "Email ou mot de passe incorrect.", "auth/invalid-email": "Adresse email invalide.", "auth/too-many-requests": "Trop d'essais. Attends quelques minutes.", "auth/network-request-failed": "Pas de connexion internet."};
+const SHARED_EMAIL = "nolimitevents77@gmail.com";
+const getProfile = () => { try { return localStorage.getItem("nle_profile") || ""; } catch (e) { return ""; } };
+const setProfile = p => { try { localStorage.setItem("nle_profile", p); } catch (e) {} };
 function initLogin() {
   let last = ""; try { last = localStorage.getItem("nle_last_email") || ""; } catch (e) {}
-  if (last) { $("#lgUser").value = last; }
+  $("#lgUser").value = last || SHARED_EMAIL;
+  const pick = b => { $$(".lg-users button").forEach(x => x.classList.toggle("on", x === b)); setProfile(b.dataset.u); $("#lgUser").value = SHARED_EMAIL; $("#lgErr").textContent = ""; $("#lgPass").focus(); };
+  $$(".lg-users button").forEach(b => b.addEventListener("click", () => pick(b)));
+  const cur = $$(".lg-users button").find(b => b.dataset.u === getProfile()); if (cur) cur.classList.add("on");
   $("#lgForm").addEventListener("submit", async ev => {
     ev.preventDefault();
     const email = $("#lgUser").value.trim(), pass = $("#lgPass").value;
+    if (!$(".lg-users button.on")) { $("#lgErr").textContent = "Choisis d'abord Alexandre ou Adeline."; return; }
     $("#lgErr").textContent = ""; const b = $("#lgForm button[type=submit]"); b.disabled = true; b.textContent = "Connexion…";
     try { await window.NLEFB.signIn(email, pass, $("#lgKeep").checked); try { localStorage.setItem("nle_last_email", email); } catch (e) {} }
     catch (e) { $("#lgErr").textContent = AUTH_ERR[e.code] || "Connexion impossible (" + (e.code || "erreur") + ")."; $("#lgPass").value = ""; }
@@ -151,13 +158,18 @@ function initLogin() {
 }
 function showLogin(msg) { $("#app").hidden = true; $("#login").hidden = false; $("#lgErr").textContent = msg || ""; }
 function enterApp(u) {
-  ME = {key: u.uid, name: u.name};
+  ME = {key: u.uid, name: getProfile() || u.name};
   $("#login").hidden = true; $("#app").hidden = false;
   $("#whoAmI").textContent = ME.name;
   boot();
 }
 async function logout() { flushSave(); try { await window.NLEFB.signOut(); } catch (e) {} location.reload(); }
 $("#btnLogout").addEventListener("click", logout);
+$("#whoAmI").addEventListener("click", () => {
+  if (!ME) return; flushSave();
+  ME.name = ME.name === "Adeline" ? "Alex" : "Adeline"; setProfile(ME.name);
+  $("#whoAmI").textContent = ME.name; toast("Profil : " + ME.name); render();
+});
 
 /* =====================================================================
    DÉMARRAGE + SYNCHRO
