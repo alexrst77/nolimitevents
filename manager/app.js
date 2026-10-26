@@ -303,7 +303,7 @@ function optOn(d, re) { return d.opts.some(o => o.on && re.test(o.name)); }
 function optQty(d, re) { const o = d.opts.find(o => o.on && re.test(o.name)); return o ? pf(o.qty) : 0; }
 function autoDates(d) {
   const e = d.event;
-  if (e.start && e.end && !e.daysManual) { const n = daysBetween(e.start, e.end) + 1; if (n > 0) e.days = n; }
+  if (e.start && e.end && !e.daysManual && d.status !== "Accepté") { const n = daysBetween(e.start, e.end) + 1; if (n > 0) e.days = n; }
   if (!e.setupManual) e.setup = e.start ? (optOn(d, /veille/i) ? addDays(e.start, -1) : e.start) : "";
   if (!e.teardownManual) e.teardown = (e.end || e.start) ? (optOn(d, /lendemain/i) ? addDays(e.end || e.start, 1) : (e.end || e.start)) : "";
 }
@@ -785,6 +785,7 @@ function tEvent() {
     ${F("Montage", "event.setup", {type: "date", hint: "Auto : la veille si l'option est cochée"})}${F("Démontage", "event.teardown", {type: "date", hint: "Auto : le lendemain si l'option est cochée"})}
     ${F("Arrivée de l'équipe", "event.arrival", {type: "time"})}${F("Jours de location", "event.days", {n: 1})}
   </div>
+  ${d.status === "Accepté" && e.start && e.end && daysBetween(e.start, e.end) + 1 !== pf(e.days) ? `<p class="hint" style="color:var(--amber);font-weight:800;margin-top:8px">Le devis signé porte sur ${pf(e.days)} jour(s) de location : le prix ne change pas avec les dates (${daysBetween(e.start, e.end) + 1} jour(s) du ${fd(e.start)} au ${fd(e.end)}). Pour facturer plus de jours, modifie « Jours de location » dans l'onglet Devis.</p>` : ""}
   ${cf.length ? `<p class="hint" style="color:var(--red);font-weight:800;margin-top:8px">Chevauche : ${cf.map(x => esc(dossierTitle(x)) + " (" + fd(occRange(x)[0]) + " → " + fd(occRange(x)[1]) + ")").join(", ")}</p>` : ""}
   </div>
   <div class="fs"><h3>Contact sur place</h3><div class="grid g2">${F("Nom", "event.onsiteName")}${F("Téléphone", "event.onsiteTel", {type: "tel"})}${F("Accès, consignes, horaires", "event.notes", {area: 1, span: 1, ph: "Portail, code, parking remorque, horaires d'ouverture au public…"})}</div></div>
@@ -1028,6 +1029,12 @@ function emitDialog(type) {
         if (datesChanged) { e2.daysManual = false; autoDates(CUR); }
         over.event = clone(CUR.event);
       }
+    }
+    if (type !== "avoir") {
+      const t2 = computeTotals(CUR), acTot2 = activeFacs(CUR.id).filter(f => f.type === "acompte").reduce((a, f) => a + pf(f.amount), 0);
+      const amt2 = type === "acompte" ? r2(t2.ttc * pf(S.acompte) / 100) : type === "solde" ? r2(t2.ttc - acTot2) : t2.ttc;
+      if (Math.abs(amt2 - amt) > 0.01) { toast("Le montant du devis a changé (" + fmt(t2.ttc) + "). Vérifie le devis avant d'émettre."); closeModal(); rerenderDossier(); return; }
+      amt = amt2;
     }
     $("#eOk").disabled = true; $("#eOk").textContent = "Numérotation…";
     const f = await emitInvoice(CUR, type, amt, $("#eDate").value || todayISO(), type === "avoir" ? "" : $("#eDue").value, ref, why, over);
