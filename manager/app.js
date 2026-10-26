@@ -312,7 +312,7 @@ function occRange(d) {
   return a ? [a, b || a] : null;
 }
 function paidFor(dId) { return Object.values(ST.paiements).filter(p => p.dossierId === dId).reduce((a, p) => a + pf(p.amount), 0); }
-function facturesFor(dId) { return Object.values(ST.factures).filter(f => f.dossierId === dId).sort((a, b) => (a.num || "").localeCompare(b.num || "")); }
+function facturesFor(dId) { return Object.values(ST.factures).filter(f => f.dossierId === dId).sort((a, b) => (a.createdAt || a.num || "").localeCompare(b.createdAt || b.num || "")); }
 function depensesFor(dId) { return Object.values(ST.depenses).filter(x => x.dossierId === dId); }
 function phase(d) {
   if (d.status === "Brouillon") return {k: "brouillon", l: "Brouillon", c: "p-grey", cal: "c-grey"};
@@ -905,6 +905,9 @@ document.addEventListener("change", e => {
 });
 
 /* ---------- Onglet FACTURES & PAIEMENTS ---------- */
+function avoirsFor(fid) { return Object.values(ST.factures).filter(a => a.type === "avoir" && a.ref === fid); }
+function isCancelled(f) { if (f.type === "avoir") return false; const tot = avoirsFor(f.id).reduce((a, x) => a + Math.abs(pf(x.amount)), 0); return tot >= Math.abs(pf(f.amount)) - 0.01; }
+function activeFacs(dId) { return facturesFor(dId).filter(f => f.type !== "avoir" && !isCancelled(f)); }
 function facAmountPaid(fid) { return Object.values(ST.paiements).filter(p => p.factureId === fid).reduce((a, p) => a + pf(p.amount), 0); }
 function tPay() {
   const d = CUR, t = computeTotals(d), paid = paidFor(d.id), facs = facturesFor(d.id);
@@ -912,7 +915,8 @@ function tPay() {
   const acompte = r2(t.ttc * pf(ST.settings.acompte) / 100);
   const facTot = facs.reduce((a, f) => a + pf(f.amount), 0);
   const pct = t.ttc ? Math.min(100, Math.round(paid / t.ttc * 100)) : 0;
-  const hasAc = facs.some(f => f.type === "acompte"), hasSolde = facs.some(f => f.type === "solde" || f.type === "totale");
+  const act = activeFacs(d.id);
+  const hasAc = act.some(f => f.type === "acompte"), hasSolde = act.some(f => f.type === "solde" || f.type === "totale");
   return `
   <div class="kpis">
     <div class="kpi"><span>Montant du devis</span><b>${fmt(t.ttc)}</b><small>${t.vatRate ? "TTC" : "net, TVA non applicable"}</small></div>
@@ -925,12 +929,12 @@ function tPay() {
     <div class="row" style="margin-bottom:10px">
       <button class="btn btn-p btn-sm" data-emit="acompte" ${hasAc || hasSolde ? "disabled" : ""}>Facture d'acompte ${pf(ST.settings.acompte)} %</button>
       <button class="btn btn-p btn-sm" data-emit="${hasAc ? "solde" : "totale"}" ${hasSolde ? "disabled" : ""}>${hasAc ? "Facture de solde" : "Facture totale"}</button>
-      <button class="btn btn-o btn-sm" data-emit="avoir" ${facs.length ? "" : "disabled"}>Avoir</button>
+      <button class="btn btn-o btn-sm" data-emit="avoir" ${act.length ? "" : "disabled"}>Avoir / annuler une facture</button>
     </div>`}
     ${facs.length ? `<div class="tbl-w"><table class="tb"><tr><th>N°</th><th>Type</th><th>Date</th><th class="r">Montant</th><th>État</th><th></th></tr>
-      ${facs.map(f => { const fp = facAmountPaid(f.id); const st = f.type === "avoir" ? `<span class="pill p-violet">Avoir</span>` : fp >= pf(f.amount) - 0.01 ? `<span class="pill p-lime">Payée</span>` : fp > 0 ? `<span class="pill p-amber">Partielle</span>` : `<span class="pill p-red">À payer</span>`;
-        return `<tr><td><b>${esc(f.num)}</b></td><td>${esc(facTypeLabel(f.type))}</td><td>${fd(f.date)}</td><td class="r">${fmt(f.amount)}</td><td>${st}</td><td class="r"><button class="btn btn-o btn-sm" data-pdf="facture" data-fid="${f.id}">PDF</button></td></tr>`; }).join("")}</table></div>` : `<p class="hint">Aucune facture émise.</p>`}
-    <p class="hint" style="margin-top:8px">Une facture émise ne se modifie plus (numérotation continue FAC-année-n°). Pour corriger : émets un avoir.</p>
+      ${facs.map(f => { const fp = facAmountPaid(f.id); const st = f.type === "avoir" ? `<span class="pill p-violet">Avoir${f.snap && f.snap.refNum ? " sur " + esc(f.snap.refNum) : ""}</span>` : isCancelled(f) ? `<span class="pill p-grey">Annulée (${avoirsFor(f.id).map(a => esc(a.num)).join(", ")})</span>` : fp >= pf(f.amount) - 0.01 ? `<span class="pill p-lime">Payée</span>` : fp > 0 ? `<span class="pill p-amber">Partielle</span>` : `<span class="pill p-red">À payer</span>`;
+        return `<tr style="${isCancelled(f) ? "opacity:.55" : ""}"><td style="white-space:nowrap"><b>${esc(f.num)}</b></td><td>${esc(facTypeLabel(f.type))}</td><td>${fd(f.date)}</td><td class="r">${fmt(f.amount)}</td><td>${st}</td><td class="r"><button class="btn btn-o btn-sm" data-pdf="facture" data-fid="${f.id}">PDF</button></td></tr>`; }).join("")}</table></div>` : `<p class="hint">Aucune facture émise.</p>`}
+    <p class="hint" style="margin-top:8px">Une facture émise ne se modifie plus (numérotation continue). Pour corriger : « Avoir / annuler une facture » du montant total, puis réémets-la avec les bonnes infos.</p>
   </div>
   <div class="fs"><h3>Paiements reçus <span class="r">${fmt(paid)}</span></h3>
     <div class="bar" style="margin-bottom:10px"><i style="width:${pct}%"></i></div>
@@ -948,14 +952,14 @@ document.addEventListener("click", e => {
 });
 function payDialog() {
   const d = CUR, t = computeTotals(d), paid = paidFor(d.id);
-  const facs = facturesFor(d.id).filter(f => f.type !== "avoir" && facAmountPaid(f.id) < pf(f.amount) - 0.01);
+  const facs = activeFacs(d.id).filter(f => facAmountPaid(f.id) < pf(f.amount) - 0.01);
   const sug = facs[0] ? r2(pf(facs[0].amount) - facAmountPaid(facs[0].id)) : r2(Math.max(0, t.ttc - paid));
   modal(`<div class="mdl-h"><h2>Paiement reçu</h2><button data-close aria-label="Fermer">${IC.x}</button></div>
     <div class="grid g2">
       <div><label class="l" for="pAmt">Montant (€)</label><input id="pAmt" inputmode="decimal" value="${sug}"></div>
       <div><label class="l" for="pDate">Date</label><input id="pDate" type="date" value="${todayISO()}"></div>
       <div><label class="l" for="pMeth">Mode</label><select id="pMeth">${PAY_METHODS.map(m => `<option>${m}</option>`).join("")}</select></div>
-      <div><label class="l" for="pFac">Facture réglée</label><select id="pFac"><option value="">Aucune</option>${facturesFor(d.id).filter(f => f.type !== "avoir").map(f => `<option value="${f.id}" ${facs[0] && facs[0].id === f.id ? "selected" : ""}>${esc(f.num)} · ${fmt(f.amount)}</option>`).join("")}</select></div>
+      <div><label class="l" for="pFac">Facture réglée</label><select id="pFac"><option value="">Aucune</option>${activeFacs(d.id).map(f => `<option value="${f.id}" ${facs[0] && facs[0].id === f.id ? "selected" : ""}>${esc(f.num)} · ${fmt(f.amount)}</option>`).join("")}</select></div>
       <div class="span2"><label class="l" for="pNote">Note</label><input id="pNote" placeholder="Réf. virement, n° chèque…"></div>
     </div>
     <div class="mdl-f"><button class="btn btn-o" data-close>Annuler</button><button class="btn btn-g" id="pOk">Enregistrer</button></div>`);
@@ -967,40 +971,71 @@ function payDialog() {
 }
 function emitDialog(type) {
   const d = CUR, t = computeTotals(d), S = ST.settings;
-  const facs = facturesFor(d.id);
-  const acFac = facs.filter(f => f.type === "acompte");
+  const act = activeFacs(d.id);
+  const acFac = act.filter(f => f.type === "acompte");
   const acTot = acFac.reduce((a, f) => a + pf(f.amount), 0);
-  let amount = 0, title = "";
-  if (type === "acompte") { amount = r2(t.ttc * pf(S.acompte) / 100); title = "Facture d'acompte"; }
-  if (type === "solde") { amount = r2(t.ttc - acTot); title = "Facture de solde"; }
-  if (type === "totale") { amount = t.ttc; title = "Facture"; }
-  if (type === "avoir") { title = "Avoir"; }
+  let amount = 0, title = "", label = "";
+  if (type === "acompte") { amount = r2(t.ttc * pf(S.acompte) / 100); title = "Facture d'acompte"; label = "Acompte de " + pf(S.acompte) + " % sur le devis " + d.num; }
+  if (type === "solde") { amount = r2(t.ttc - acTot); title = "Facture de solde"; label = "Solde du devis " + d.num; }
+  if (type === "totale") { amount = t.ttc; title = "Facture"; label = "Facture du devis " + d.num; }
+  if (type === "avoir") { title = "Avoir / annuler une facture"; }
   const due = type === "acompte" ? todayISO() : (d.event.start ? addDays(d.event.start, -pf(S.soldeDays || 7)) : addDays(todayISO(), 30));
+  const c = d.client, e = d.event;
+  const I = (id, lab, v, o = {}) => `<div class="${o.span ? "span2" : ""}" style="min-width:0"><label class="l" for="${id}">${lab}</label><input id="${id}" value="${esc(v || "")}" ${o.ph ? `placeholder="${esc(o.ph)}"` : ""} ${o.type ? `type="${o.type}"` : ""}></div>`;
   modal(`<div class="mdl-h"><h2>${title}</h2><button data-close aria-label="Fermer">${IC.x}</button></div>
     ${type === "avoir" ? `<div class="grid g2">
-      <div class="span2"><label class="l" for="eRef">Facture concernée</label><select id="eRef">${facs.filter(f => f.type !== "avoir").map(f => `<option value="${f.id}">${esc(f.num)} · ${fmt(f.amount)}</option>`).join("")}</select></div>
-      <div><label class="l" for="eAmt">Montant de l'avoir (€)</label><input id="eAmt" inputmode="decimal" placeholder="ex. 200"></div>
+      <div class="span2"><label class="l" for="eRef">Facture concernée</label><select id="eRef">${act.map(f => `<option value="${f.id}" data-amt="${Math.abs(pf(f.amount))}">${esc(f.num)} · ${esc(facTypeLabel(f.type))} · ${fmt(f.amount)}</option>`).join("")}</select></div>
+      <div><label class="l" for="eAmt">Montant de l'avoir (€)</label><input id="eAmt" inputmode="decimal" value="${act[0] ? Math.abs(pf(act[0].amount)) : ""}"><p class="hint">Montant total = la facture est annulée et peut être refaite.</p></div>
       <div><label class="l" for="eDate">Date</label><input id="eDate" type="date" value="${todayISO()}"></div>
-      <div class="span2"><label class="l" for="eWhy">Motif</label><input id="eWhy" placeholder="Annulation, geste commercial, erreur…"></div></div>`
+      <div class="span2"><label class="l" for="eWhy">Motif</label><input id="eWhy" placeholder="Erreur de libellé, annulation, geste commercial…"></div></div>`
     : `<div class="totbox" style="margin-bottom:12px">
         <div class="l"><span>Devis ${esc(d.num)}</span><span>${fmt(t.ttc)}</span></div>
         ${type === "solde" ? acFac.map(f => `<div class="l rem"><span>Acompte ${esc(f.num)}</span><span>− ${fmt(f.amount)}</span></div>`).join("") : ""}
         <div class="l big"><span>À facturer</span><span>${fmt(amount)}</span></div></div>
-      <div class="grid g2"><div><label class="l" for="eDate">Date de facture</label><input id="eDate" type="date" value="${todayISO()}"></div>
-      <div><label class="l" for="eDue">Échéance</label><input id="eDue" type="date" value="${due}"></div></div>
-      ${!d.event.start ? `<p class="hint" style="color:var(--amber);font-weight:800;margin-top:8px">Les dates de l'événement ne sont pas encore définies : la facture indiquera « date de prestation à définir ».</p>` : ""}`}
-    <p class="hint" style="margin-top:10px">Le numéro est attribué à l'émission. La facture ne pourra plus être modifiée.</p>
+      <div class="grid g2">
+        ${I("eLabel", "Libellé de la facture", label, {span: 1})}
+        <div><label class="l" for="eDate">Date de facture</label><input id="eDate" type="date" value="${todayISO()}"></div>
+        <div><label class="l" for="eDue">Échéance</label><input id="eDue" type="date" value="${due}"></div>
+      </div>
+      <p class="sec-t" style="margin:14px 0 6px"><b style="color:var(--navy)">Client facturé</b></p>
+      <div class="grid g2">
+        ${I("ecName", "Société / organisme", c.name, {span: 1})}${I("ecContact", "Contact", c.contact)}${I("ecSiren", "SIREN", c.siren)}
+        ${I("ecAddr", "Adresse", c.addr, {span: 1})}${I("ecCp", "Code postal", c.cp)}${I("ecCity", "Ville", c.city)}
+        ${I("ecTel", "Téléphone", c.tel)}${I("ecEmail", "Email", c.email)}
+      </div>
+      <p class="sec-t" style="margin:14px 0 6px"><b style="color:var(--navy)">Événement</b></p>
+      <div class="grid g2">
+        ${I("eeName", "Nom de l'événement", e.name, {span: 1})}${I("eeAddr", "Lieu / adresse", e.addr, {span: 1})}${I("eeCp", "Code postal", e.cp)}${I("eeCity", "Ville", e.city)}
+        ${I("eeStart", "Début", e.start, {type: "date"})}${I("eeEnd", "Fin", e.end, {type: "date"})}
+      </div>
+      <label class="lg-keep" style="margin-top:10px"><input type="checkbox" id="eSync" checked> Mettre aussi à jour le dossier avec ces informations</label>`}
+    <p class="hint" style="margin-top:10px">Le numéro est attribué à l'émission. Le document ne pourra plus être modifié (correction = avoir).</p>
     <div class="mdl-f"><button class="btn btn-o" data-close>Annuler</button><button class="btn btn-p" id="eOk">Émettre ${type === "avoir" ? "l'avoir" : "la facture"}</button></div>`);
+  if (type === "avoir") $("#eRef").onchange = ev => { const o = ev.target.selectedOptions[0]; if (o) $("#eAmt").value = o.dataset.amt; };
   $("#eOk").onclick = async () => {
-    let amt = amount, ref = "", why = "";
+    let amt = amount, ref = "", why = "", over = null;
     if (type === "avoir") { amt = -Math.abs(pf($("#eAmt").value)); ref = $("#eRef").value; why = $("#eWhy").value.trim(); if (!amt) { toast("Indique le montant"); return; } }
+    else {
+      const v = id => $("#" + id).value.trim();
+      over = {label: v("eLabel"),
+        client: Object.assign({}, d.client, {name: v("ecName"), contact: v("ecContact"), siren: v("ecSiren"), addr: v("ecAddr"), cp: v("ecCp"), city: v("ecCity"), tel: v("ecTel"), email: v("ecEmail")}),
+        event: Object.assign({}, d.event, {name: v("eeName"), addr: v("eeAddr"), cp: v("eeCp"), city: v("eeCity"), start: v("eeStart"), end: v("eeEnd")})};
+      if (!over.client.name && !over.client.contact) { toast("Indique au moins le nom du client"); return; }
+      if ($("#eSync").checked) {
+        CUR.client = clone(over.client);
+        const e2 = CUR.event; const datesChanged = e2.start !== over.event.start || e2.end !== over.event.end;
+        Object.assign(e2, {name: over.event.name, addr: over.event.addr, cp: over.event.cp, city: over.event.city, start: over.event.start, end: over.event.end});
+        if (datesChanged) { e2.daysManual = false; autoDates(CUR); }
+        over.event = clone(CUR.event);
+      }
+    }
     $("#eOk").disabled = true; $("#eOk").textContent = "Numérotation…";
-    const f = await emitInvoice(d, type, amt, $("#eDate").value || todayISO(), type === "avoir" ? "" : $("#eDue").value, ref, why);
+    const f = await emitInvoice(CUR, type, amt, $("#eDate").value || todayISO(), type === "avoir" ? "" : $("#eDue").value, ref, why, over);
     closeModal();
     if (f) { toast(f.num + " émise"); rerenderDossier(); openPdfPreview("facture", f.id); }
   };
 }
-async function emitInvoice(d, type, amount, date, due, ref, why) {
+async function emitInvoice(d, type, amount, date, due, ref, why, over) {
   const ok = await STORE.lock("factures");
   if (!ok) { toast("Une autre facture est en cours d'émission, réessaie dans quelques secondes."); return null; }
   const all = await STORE.list("factures");
@@ -1008,10 +1043,10 @@ async function emitInvoice(d, type, amount, date, due, ref, why) {
   all.forEach(f => { const m = (f.num || "").match(/^(?:FAC|AV)-(\d{4})-(\d+)$/); if (m && m[1] === y) max = Math.max(max, +m[2]); });
   const num = (type === "avoir" ? "AV" : "FAC") + "-" + y + "-" + String(max + 1).padStart(3, "0");
   const t = computeTotals(d), S = ST.settings;
-  const prevAc = facturesFor(d.id).filter(f => f.type === "acompte").map(f => ({num: f.num, amount: f.amount}));
+  const prevAc = activeFacs(d.id).filter(f => f.type === "acompte").map(f => ({num: f.num, amount: f.amount}));
   const f = {
     id: uid("f"), num, type, dossierId: d.id, date, due: due || "", amount: r2(amount), ref, why, quoteNum: d.num, by: ME.name, createdAt: new Date().toISOString(),
-    snap: {client: clone(d.client), event: clone(d.event), lines: quoteLines(d, t), totals: {brut: t.brut, locRem: t.locRem, slideDisc: pf(d.slide.disc), offered: t.offered, partial: t.partial, ht: t.ht, vatRate: t.vatRate, vat: t.vat, ttc: t.ttc}, prevAc, acPct: pf(S.acompte),
+    snap: {label: over && over.label ? over.label : "", client: clone(over ? over.client : d.client), event: clone(over ? over.event : d.event), lines: quoteLines(d, t), totals: {brut: t.brut, locRem: t.locRem, slideDisc: pf(d.slide.disc), offered: t.offered, partial: t.partial, ht: t.ht, vatRate: t.vatRate, vat: t.vat, ttc: t.ttc}, prevAc, acPct: pf(S.acompte),
       co: {coname: S.coname, coaddr: S.coaddr, cotel: S.cotel, comail: S.comail, cosiret: S.cosiret, cotva: S.cotva, iban: S.iban, bic: S.bic, pay: S.pay, legal: S.legal, vatRegime: S.vatRegime},
       refNum: ref && ST.factures[ref] ? ST.factures[ref].num : ""}
   };
@@ -1477,7 +1512,7 @@ function buildFacturePDF(f) {
   let body = "";
   if (f.type === "acompte") {
     body = `<table class="pd-t"><tr><th>Désignation</th><th class="r">Montant HT</th></tr>
-      <tr><td class="des"><b>Acompte de ${s.acPct} % sur le devis ${esc(f.quoteNum)}</b><ul><li>${esc(SLIDE_NAME)} — location ${days} jour${days > 1 ? "s" : ""}</li><li>Montant total du devis : ${fmt(T.ttc)}${fr ? "" : " TTC"}</li></ul></td><td class="r">${fmt(fr ? f.amount : r2(f.amount / (1 + T.vatRate / 100)))}</td></tr></table>
+      <tr><td class="des"><b>${esc(s.label || ("Acompte de " + s.acPct + " % sur le devis " + f.quoteNum))}</b><ul><li>${esc(SLIDE_NAME)} — location ${days} jour${days > 1 ? "s" : ""}</li><li>Montant total du devis : ${fmt(T.ttc)}${fr ? "" : " TTC"}</li></ul></td><td class="r">${fmt(fr ? f.amount : r2(f.amount / (1 + T.vatRate / 100)))}</td></tr></table>
       <div class="pd-totw"><div class="pd-tot">${fr ? "" : `<div class="l"><span>TVA ${T.vatRate} %</span><span>${fmt(r2(f.amount - f.amount / (1 + T.vatRate / 100)))}</span></div>`}<div class="l ttc"><span>${fr ? "NET À PAYER" : "TOTAL TTC"}</span><span>${fmt(f.amount)}</span></div>${fr ? `<div class="l note"><span>${VAT_FRANCHISE}</span></div>` : ""}</div></div>`;
   } else if (f.type === "avoir") {
     body = `<table class="pd-t"><tr><th>Désignation</th><th class="r">Montant</th></tr><tr><td class="des"><b>Avoir sur facture ${esc(s.refNum || "")}</b>${f.why ? `<ul><li>Motif : ${esc(f.why)}</li></ul>` : ""}</td><td class="r">${fmt(f.amount)}</td></tr></table>
@@ -1485,7 +1520,7 @@ function buildFacturePDF(f) {
   } else {
     const ac = f.type === "solde" ? s.prevAc.map(a => `<div class="l rem"><span>Acompte déjà facturé ${esc(a.num)}</span><span>− ${fmt(a.amount)}</span></div>`).join("") : "";
     const extra = `${fr ? "" : `<div class="l"><span>TOTAL TTC</span><span>${fmt(T.ttc)}</span></div>`}${ac}<div class="l ttc"><span>${f.type === "solde" ? "RESTE À PAYER" : fr ? "NET À PAYER" : "TOTAL TTC"}</span><span>${fmt(f.amount)}</span></div>`;
-    body = pdfLinesTable(s.lines, T.vatRate, fr) + pdfTotals(T, fr, extra);
+    body = (s.label ? `<p style="font-size:10pt;margin:0 0 10px"><b style="color:#132A5C">Objet :</b> ${esc(s.label)}</p>` : "") + pdfLinesTable(s.lines, T.vatRate, fr) + pdfTotals(T, fr, extra);
   }
   const paidBlock = f.type !== "avoir" && paid >= f.amount - 0.01 && paid > 0 ? `<p style="text-align:right;margin:-4px 0 10px"><span class="pd-paid">PAYÉE</span></p>` : "";
   return `<div class="pd"><div class="pd-page">${pdfHead(co, title, f.num, dline)}
